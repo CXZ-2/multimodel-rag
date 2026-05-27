@@ -1,0 +1,13 @@
+.env
+node_modules/
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+.vscode/
+.idea/
+uploads/
+.DS_Store
+*.tmp.*
+.git-rewrite/
