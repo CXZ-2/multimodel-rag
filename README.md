@@ -1,19 +1,21 @@
 🚀 OmniMind - 多模态智能知识平台
+## 系统演示
+<img width="1904" height="910" alt="image" src="https://github.com/user-attachments/assets/bd3697f7-2472-4fac-ab0d-2b7d2136ec5c" />
+
+<img width="1900" height="915" alt="image" src="https://github.com/user-attachments/assets/7d6e0e31-ab67-40f6-a3b5-f1e3de2885e3" />
+
+<img width="1340" height="643" alt="image" src="https://github.com/user-attachments/assets/490e3a6f-c950-43ef-b032-5ebe90444dea" />
+
+<img width="1340" height="642" alt="image" src="https://github.com/user-attachments/assets/73226508-7d6b-4eea-8b1a-e1e4f0fab582" />
+
+
 <div align="center">
 基于 RAG + CLIP + LLM 的企业级多模态知识库系统
 
 支持 PDF、图片、文本统一检索与智能问答
 
-
-
-
-
-
-
-
-
-
 </div>
+
 📖 项目简介
 
 OmniMind 是一个基于 Retrieval-Augmented Generation（RAG） 构建的多模态智能知识平台。
@@ -69,6 +71,8 @@ CLIP视觉模型
 LLM推理
  ↓
 最终答案
+
+
 🖼 图文联合理解
 
 支持：
@@ -117,7 +121,10 @@ docker-compose.yml
                            ▼
 
                         最终答案
+
+                        
 📂 项目结构
+
 OmniMind
 │
 ├── backend/                 # 后端服务
@@ -134,6 +141,7 @@ OmniMind
 ├── docker-compose.yml       # Docker部署
 │
 └── README.md
+
 ⚙️ 环境要求
 
 推荐配置：
@@ -143,11 +151,15 @@ Python	3.10+
 Node.js	18+
 Docker	Latest
 CUDA	11.8+（可选）
+
+
 🚀 快速开始
+
 1. 克隆项目
 git clone https://github.com/CXZ-2/multimodel-rag.git
 
 cd multimodel-rag
+
 2. 配置环境变量
 
 复制配置文件：
@@ -161,13 +173,16 @@ OPENAI_API_KEY=your_api_key
 MODEL_NAME=gpt-4o
 
 EMBEDDING_MODEL=clip
+
 3. Docker启动
 docker-compose up -d
 
 查看运行状态：
 
 docker ps
+
 💻 本地开发
+
 Backend
 cd backend
 
@@ -180,6 +195,7 @@ cd frontend
 npm install
 
 npm run dev
+
 📸 使用流程
 上传文档
       ↓
@@ -194,6 +210,7 @@ npm run dev
 多模态检索
       ↓
 LLM生成答案
+
 🎯 应用场景
 企业知识库
 制度文档查询
@@ -211,13 +228,16 @@ AI助手
 图片搜索
 图文检索
 PDF理解
+
 🛠 技术栈
+
 后端
 FastAPI
 LangChain
 LlamaIndex
 CLIP
 OpenAI API
+
 前端
 Vue3
 Vite
@@ -227,9 +247,11 @@ RAG
 CLIP Embedding
 Multimodal Search
 LLM Reasoning
+
 部署
 Docker
 Docker Compose
+
 📈 Roadmap
  多模态检索
  PDF解析
@@ -241,6 +263,7 @@ Docker Compose
  知识库共享
  MCP支持
  Agent工作流
+ 
 🤝 贡献指南
 
 欢迎提交：
