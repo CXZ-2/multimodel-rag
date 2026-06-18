@@ -1,307 +1,74 @@
-🚀 OmniMind - 多模态智能知识平台
-## 系统演示
-<img width="1904" height="910" alt="image" src="https://github.com/user-attachments/assets/bd3697f7-2472-4fac-ab0d-2b7d2136ec5c" />
-
-<img width="1900" height="915" alt="image" src="https://github.com/user-attachments/assets/7d6e0e31-ab67-40f6-a3b5-f1e3de2885e3" />
-
-<img width="1340" height="643" alt="image" src="https://github.com/user-attachments/assets/490e3a6f-c950-43ef-b032-5ebe90444dea" />
-
-<img width="1340" height="642" alt="image" src="https://github.com/user-attachments/assets/73226508-7d6b-4eea-8b1a-e1e4f0fab582" />
-
-
-<div align="center">
-基于 RAG + CLIP + LLM 的企业级多模态知识库系统
-
-支持 PDF、图片、文本统一检索与智能问答
-
-</div>
-
-📖 项目简介
-
-OmniMind 是一个基于 Retrieval-Augmented Generation（RAG） 构建的多模态智能知识平台。
-
-系统能够同时理解：
-
-📄 文本文档
-🖼 图片内容
-📑 PDF文件
-🧠 企业知识库
-
-通过结合：
-
-大语言模型（LLM）
-CLIP视觉模型
-向量数据库
-检索增强生成（RAG）
-
-实现企业级知识管理与智能问答能力。
-
-✨ 核心功能
-📚 智能知识库
-文档上传
-文档解析
-自动切分 Chunk
-向量化存储
-知识检索
-🔍 多模态检索
-
-支持：
-
-文本 → 文本检索
-文本 → 图片检索
-图片 → 图片检索
-图片 → 文本检索
-
-基于 CLIP 实现跨模态语义理解。
-
-🤖 智能问答
-
-用户提问：
-
-请解释系统架构图中的核心组件
-
-系统流程：
-
-问题
- ↓
-向量检索
- ↓
-相关文档
- ↓
-LLM推理
- ↓
-最终答案
-
-
-🖼 图文联合理解
-
-支持：
-
-PDF图片抽取
-图文关联
-图像语义搜索
-图表内容分析
-⚡ Docker 一键部署
-
-项目内置：
-
-docker-compose.yml
-
-支持快速启动整套服务。
-
-🏗 系统架构
-
-
-                  ┌────────────────┐
-                  │    用户提问     |
-                  └────────┬───────┘
-                           │
-                           ▼
-                  ┌──────────────────┐
-                  │      API服务      │
-                  └────────┬─────────┘
-                           │
-        ┌──────────────────┼──────────────────┐
-        │                  │                  │
-        ▼                  ▼                  ▼
-
-    文本检索模块          图像检索模块       多模态检索模块
-
-        │                  │                  │
-        └──────────────────┼──────────────────┘
-                           │
-                           ▼
-
-                 向量数据库(Vector DB)
-
-                           │
-                           ▼
-
-                    大语言模型(LLM)
-
-                           │
-                           ▼
-
-                        最终答案
-
-                        
-📂 项目结构
-
-OmniMind
-│
-├── backend/                 # 后端服务
-│
-├── frontend/                # 前端项目
-│
-├── tests/                   # 测试代码
-│
-├── docs/
-│   └── superpowers/specs/   # 项目设计文档
-│
-├── .env.example             # 环境变量示例
-│
-├── docker-compose.yml       # Docker部署
-│
-└── README.md
-
-⚙️ 环境要求
-
-推荐配置：
-
-项目	版本
-Python	3.10+
-Node.js	18+
-Docker	Latest
-CUDA	11.8+（可选）
-
-
-🚀 快速开始
-
-1. 克隆项目
-git clone https://github.com/CXZ-2/multimodel-rag.git
-
-cd multimodel-rag
-
-2. 配置环境变量
-
-复制配置文件：
-
-cp .env.example .env
-
-填写：
-
-OPENAI_API_KEY=your_api_key
-
-MODEL_NAME=gpt-4o
-
-EMBEDDING_MODEL=clip
-
-3. Docker启动
-docker-compose up -d
-
-查看运行状态：
-
-docker ps
-
-💻 本地开发
-
-Backend
-cd backend
-
-pip install -r requirements.txt
-
-python main.py
-Frontend
-cd frontend
-
-npm install
-
-npm run dev
-
-📸 使用流程
-上传文档
-      ↓
-自动解析
-      ↓
-向量化存储
-      ↓
-构建知识库
-      ↓
-用户提问
-      ↓
-多模态检索
-      ↓
-LLM生成答案
-
-🎯 应用场景
-企业知识库
-制度文档查询
-产品手册问答
-内部知识管理
-AI助手
-智能客服
-企业Copilot
-私有化GPT
-学术研究
-论文问答
-图表检索
-文献分析
-多模态搜索
-图片搜索
-图文检索
-PDF理解
-
-🛠 技术栈
-
-后端
-FastAPI
-LangChain
-LlamaIndex
-CLIP
-OpenAI API
-
-前端
-Vue3
-Vite
-TypeScript
-AI能力
-RAG
-CLIP Embedding
-Multimodal Search
-LLM Reasoning
-
-部署
-Docker
-Docker Compose
-
-📈 Roadmap
- 多模态检索
- PDF解析
- CLIP集成
- Docker部署
- Milvus支持
- Qdrant支持
- 用户权限管理
- 知识库共享
- MCP支持
- Agent工作流
- 
-🤝 贡献指南
-
-欢迎提交：
-
-Bug修复
-功能增强
-文档优化
-性能优化
-
-提交流程：
-
-Fork
- ↓
-Create Branch
- ↓
-Commit
- ↓
-Push
- ↓
-Pull Request
-⭐ Star History
-
-如果这个项目对你有帮助，欢迎点一个 Star ⭐
-
-你的支持是项目持续更新的动力。
-
-📄 License
-
-Apache License 2.0
-
-👨‍💻 作者
-
-CXZ-2
-
-GitHub：
-
-https://github.com/CXZ-2
-
-欢迎交流 RAG、Agent、多模态 AI 与企业级知识库系统。
+# OmniMind 多模态智能知识平台
+
+基于 RAG 的多模态知识库问答平台，支持 PDF/文档上传、图文混合检索、视频理解与生成、网页爬取知识库。前端 React + Ant Design + Vite，后端 FastAPI + Celery + Milvus + PostgreSQL。
+
+## 快速启动
+
+```bash
+cp .env.example .env   # 填入 DASHSCOPE_API_KEY
+docker compose up -d --build
+```
+
+- 前端: http://localhost:3000
+- 后端 API 文档: http://localhost:8000/docs
+
+## 核心功能
+
+| 功能 | 说明 |
+|------|------|
+| 文档问答 | PDF/Word/PPT/Excel 上传 → 自动解析 → 图文混合检索问答 |
+| 视频理解 | 上传视频 → DashScope Qwen-VL 分析 → 语音转文字 → 可检索视频内容 |
+| 视频生成 | T2V 文生视频，DashScope 万相通道，支持 16:9/9:16/1:1 |
+| 网页爬取 | 定时爬取政策法规网站，自动入库 |
+| 以图搜图 | Chinese-CLIP 图像向量检索 |
+| 对话记忆 | 短期记忆 + 长期记忆提取，多轮对话上下文 |
+
+## 服务架构 (Docker Compose)
+
+| 服务 | 端口 | 用途 |
+|------|------|------|
+| frontend | 3000 | React SPA (nginx → /api) |
+| backend | 8000 | FastAPI (uvicorn) |
+| postgres | 5432 | 文档/对话数据 (pgvector) |
+| milvus-standalone | 19530 | 向量检索 |
+| redis | 6379 | Celery 消息队列 + 缓存 |
+| celery-worker | — | 异步文档/视频处理 |
+| celery-beat | — | 定时爬取调度 |
+| minio | 9000 | Milvus 对象存储 |
+| etcd | 2379 | Milvus 元数据 |
+
+## 技术栈
+
+**后端:** FastAPI + Celery + SQLAlchemy + Pydantic
+**深度学习:** Chinese-CLIP (嵌入) + PaddleOCR (文字识别) + faster-whisper (语音) + BGE-Reranker
+**向量库:** Milvus v2.4.0 (text_collection + image_collection)
+**LLM:** 通义千问 (DashScope API / OpenAI 兼容模式)
+**视频:** PyAV + FFmpeg + DashScope Qwen-VL + 通义万相 T2V
+**前端:** React 18 + TypeScript + Ant Design + Vite + ReactMarkdown
+
+## 环境变量
+
+| 变量 | 说明 |
+|------|------|
+| DASHSCOPE_API_KEY | 通义千问 API 密钥 (必需) |
+| DASHSCOPE_MODEL | LLM 模型 (默认 qwen-turbo) |
+| DASHSCOPE_VL_MODEL | 视觉模型 (默认 qwen-vl-plus) |
+| MILVUS_HOST/PORT | Milvus 连接 |
+| MAX_UPLOAD_SIZE_MB | 文件上传上限 (默认 500MB) |
+
+## 项目结构
+
+```
+backend/
+  main.py           # FastAPI 入口
+  config.py         # pydantic-settings 配置
+  api/              # REST API (query, documents, videos, conversations, crawl)
+  core/             # 核心模块 (agents, retriever, embedder, generator, video_*)
+  models/           # SQLAlchemy 模型 + Pydantic schemas
+
+frontend/
+  src/
+    pages/          # 页面组件 (Chat, Upload, KnowledgeBase, ImageSearch)
+    services/       # API 调用层 (axios + SSE)
+    components/     # 共享组件 (Sidebar)
+```

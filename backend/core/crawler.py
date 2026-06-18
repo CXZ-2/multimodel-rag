@@ -23,19 +23,38 @@ class SiteAdapter(Protocol):
     def parse_page(self, html: str, url: str) -> CrawledPage: ...
 
 
+def _headers():
+    return {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/120.0.0.0 Safari/537.36"
+        ),
+        "Accept-Language": "zh-CN,zh;q=0.9",
+    }
+
+
 def create_client() -> httpx.Client:
-    return httpx.Client(
-        timeout=30,
-        follow_redirects=True,
-        headers={
-            "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/120.0.0.0 Safari/537.36"
-            ),
-            "Accept-Language": "zh-CN,zh;q=0.9",
-        },
-    )
+    return httpx.Client(timeout=30, follow_redirects=True, headers=_headers())
+
+
+async def fetch_urls_async(urls: list[str]) -> list[tuple[str, str]]:
+    """异步并发抓取 URL，返回 [(url, html), ...]，跳过失败的"""
+    import asyncio
+
+    async def _fetch_one(client: httpx.AsyncClient, url: str) -> tuple[str, str] | None:
+        try:
+            resp = await client.get(url)
+            if resp.status_code == 200 and resp.text:
+                return (url, resp.text)
+        except Exception:
+            pass
+        return None
+
+    async with httpx.AsyncClient(timeout=30, follow_redirects=True, headers=_headers(), limits=httpx.Limits(max_connections=10)) as client:
+        tasks = [_fetch_one(client, url) for url in urls]
+        results = await asyncio.gather(*tasks)
+    return [r for r in results if r is not None]
 
 
 def fetch_urls(client: httpx.Client, urls: list[str]) -> list[tuple[str, str]]:

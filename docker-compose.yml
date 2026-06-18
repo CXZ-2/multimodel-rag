@@ -132,7 +132,6 @@ services:
       - backend
 
 volumes:
-      - hf_cache:/root/.cache/huggingface
   etcd_data:
   minio_data:
   milvus_data:

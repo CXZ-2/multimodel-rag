@@ -163,6 +163,16 @@ export async function deleteConversation(id: string): Promise<void> {
   await api.delete(`/conversations/${id}`);
 }
 
+export async function appendMessage(convId: string, body: {
+  role?: string;
+  content: string;
+  sources?: any[];
+  image_base64?: string;
+}): Promise<MessageInfo> {
+  const { data } = await api.post<MessageInfo>(`/conversations/${convId}/messages`, body);
+  return data;
+}
+
 // --- Web Crawl ---
 export interface CrawlRequest {
   source: string;
@@ -281,4 +291,100 @@ export async function queryRagStream(
   } catch (e: any) {
     onError(e);
   }
+}
+
+// ========== 视频相关 ==========
+
+export interface VideoUploadResponse {
+  message: string;
+  doc_id: string;
+  status: string;
+}
+
+export interface VideoStatusResponse {
+  id: string;
+  status: string;
+  duration: number | null;
+  transcript: string | null;
+  description: string | null;
+  error_message: string | null;
+}
+
+export interface VideoInfo {
+  id: string;
+  filename: string;
+  file_size: number;
+  duration: number | null;
+  status: string;
+  source_type: string;
+  understanding: any;
+  uploaded_at: string;
+}
+
+export interface VideoListResponse {
+  items: VideoInfo[];
+  total: number;
+}
+
+export interface VideoGenerateRequest {
+  prompt: string;
+  model?: string;
+  resolution?: string;
+  ratio?: string;
+  duration?: number;
+  negative_prompt?: string;
+}
+
+export interface VideoGenerateResponse {
+  task_id: string;
+  status: string;
+}
+
+export interface VideoGenerateStatusResponse {
+  task_id: string;
+  status: string;
+  video_url: string | null;
+  error_message: string | null;
+}
+
+export async function uploadVideo(file: File): Promise<VideoUploadResponse> {
+  const form = new FormData();
+  form.append("file", file);
+  const { data } = await api.post<VideoUploadResponse>("/videos/upload", form);
+  return data;
+}
+
+export async function getVideoStatus(docId: string): Promise<VideoStatusResponse> {
+  const { data } = await api.get<VideoStatusResponse>(`/videos/${docId}/status`);
+  return data;
+}
+
+export async function listVideos(params?: {
+  status?: string;
+  source_type?: string;
+  page?: number;
+  page_size?: number;
+}): Promise<VideoListResponse> {
+  const { data } = await api.get<VideoListResponse>("/videos", { params });
+  return data;
+}
+
+export async function deleteVideo(docId: string): Promise<void> {
+  await api.delete(`/videos/${docId}`);
+}
+
+export async function generateVideo(req: VideoGenerateRequest): Promise<VideoGenerateResponse> {
+  const { data } = await api.post<VideoGenerateResponse>("/videos/generate", req);
+  return data;
+}
+
+export async function getGenerationStatus(
+  taskId: string,
+  model?: string
+): Promise<VideoGenerateStatusResponse> {
+  const { data } = await api.get<VideoGenerateStatusResponse>(
+    `/videos/generate/${taskId}`,
+    { params: { model } }
+  );
+  return data;
 }

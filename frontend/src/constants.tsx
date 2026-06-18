@@ -16,6 +16,8 @@ export const STATUS_MAP: Record<string, { color: string; icon: ReactNode; label:
   cleaning: { color: "processing", icon: <SyncOutlined spin />, label: "清理中" },
   embedding: { color: "processing", icon: <SyncOutlined spin />, label: "嵌入中" },
   indexing: { color: "processing", icon: <SyncOutlined spin />, label: "索引中" },
+  processing: { color: "processing", icon: <SyncOutlined spin />, label: "处理中" },
+  generating: { color: "processing", icon: <SyncOutlined spin />, label: "生成中" },
   done: { color: "success", icon: <CheckCircleOutlined />, label: "完成" },
   failed: { color: "error", icon: <CloseCircleOutlined />, label: "失败" },
 };

@@ -147,3 +147,70 @@ class ImageSearchResult(BaseModel):
 
 class ImageSearchResponse(BaseModel):
     results: list[ImageSearchResult]
+
+
+# ============ 视频相关 ============
+
+class VideoUploadResponse(BaseModel):
+    message: str
+    doc_id: str
+    status: str = "pending"
+
+
+class VideoStatusOut(BaseModel):
+    id: str
+    status: str
+    duration: float | None = None
+    transcript: str | None = None
+    description: str | None = None
+    error_message: str | None = None
+
+    @field_validator("id", mode="before")
+    @classmethod
+    def coerce_id(cls, v: object) -> str:
+        return str(v)
+
+
+class VideoGenerateRequest(BaseModel):
+    prompt: str
+    model: str = "wanx2.1-t2v-turbo"
+    resolution: str = "720P"
+    ratio: str = "16:9"
+    duration: int = 5
+    negative_prompt: str | None = None
+
+
+class VideoGenerateResponse(BaseModel):
+    task_id: str
+    status: str
+
+
+class VideoGenerateStatusOut(BaseModel):
+    task_id: str
+    status: str
+    video_url: str | None = None
+    error_message: str | None = None
+
+
+class VideoOut(BaseModel):
+    id: str
+    filename: str
+    file_size: int
+    duration: float | None = None
+    status: str
+    source_type: str
+    understanding: dict | None = None
+    uploaded_at: datetime
+
+    @field_validator("id", mode="before")
+    @classmethod
+    def coerce_id(cls, v: object) -> str:
+        return str(v)
+
+    class Config:
+        from_attributes = True
+
+
+class VideoListOut(BaseModel):
+    items: list[VideoOut]
+    total: int

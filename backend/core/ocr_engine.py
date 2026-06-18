@@ -26,3 +26,22 @@ def ocr_image(image_path: str) -> str:
         return "\n".join(texts)
     except Exception:
         return ""
+
+
+def ocr_images_batch(image_paths: list[str]) -> list[str]:
+    """批量 OCR 图片，减少模型调用次数"""
+    if not image_paths:
+        return []
+    try:
+        ocr = get_ocr()
+        results = ocr.ocr(image_paths, cls=True)
+        out = []
+        for result in results:
+            if result:
+                texts = [line[1][0] for line in result]
+                out.append("\n".join(texts))
+            else:
+                out.append("")
+        return out
+    except Exception:
+        return [""] * len(image_paths)

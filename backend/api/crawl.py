@@ -9,7 +9,7 @@ from sqlalchemy import select
 
 from backend.models.database import get_db
 from backend.models.documents import Document
-from backend.core.crawler import ADAPTERS, create_client, fetch_urls
+from backend.core.crawler import ADAPTERS, fetch_urls_async
 from backend.core.tasks import process_crawled_document
 from backend.core.redis_client import clear_cache
 
@@ -30,10 +30,7 @@ async def crawl_documents(req: CrawlRequest, db: AsyncSession = Depends(get_db))
         raise HTTPException(400, f"未知来源: {req.source}, 可用: {list(ADAPTERS.keys())}")
 
     urls = adapter.discover_urls(limit=req.limit)
-
-    client = create_client()
-    fetched = fetch_urls(client, urls)
-    client.close()
+    fetched = await fetch_urls_async(urls)
 
     # 批量去重: 一次查询所有已爬取的 URL
     urls_to_check = [url for url, _ in fetched]

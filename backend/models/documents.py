@@ -16,6 +16,7 @@ class Document(Base):
     status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
     text_chunks: Mapped[int] = mapped_column(Integer, default=0)
     image_count: Mapped[int] = mapped_column(Integer, default=0)
+    duration: Mapped[float | None] = mapped_column(nullable=True)  # 视频时长(秒)
     cleaning_report: Mapped[dict] = mapped_column(JSONB, default=dict)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     source_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)

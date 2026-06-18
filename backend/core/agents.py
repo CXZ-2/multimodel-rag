@@ -35,6 +35,8 @@ RERANK_TOP_K = 5       # 精排保留数
 def _route(question: str) -> str:
     """关键词快速分类 → LLM 降级（不确定时）"""
     fast = classify(question)
+    if fast == "rag_fast":
+        return "rag"           # 多媒体问题强制走 RAG，跳过 LLM 路由
     if fast != "rag":
         return fast
     try:
@@ -72,8 +74,23 @@ def _build_general_prompt(question: str, memory_ctx: str) -> str:
     return f"你是一个金融助手，请简洁专业地回答：{question}"
 
 
-def _build_rag_prompt(question: str, results: list[dict], memory_ctx: str) -> str:
-    """构建 RAG prompt: 记忆上下文 + 参考资料 + 用户问题"""
+def _extract_video_info(history: list[dict] | None) -> str:
+    """从对话历史中提取最近的视频上传信息"""
+    if not history:
+        return ""
+    video_info = []
+    for h in history[-6:]:
+        content = h.get("content", "")
+        if "视频" in content and ("处理完成" in content or "上传" in content):
+            video_info.append(content[:300])
+    return "\n".join(video_info) if video_info else ""
+
+
+def _build_rag_prompt(question: str, results: list[dict], memory_ctx: str,
+                      history: list[dict] = None) -> str:
+    """构建 RAG prompt: 记忆上下文 + 视频上下文 + 参考资料 + 用户问题"""
+    video_ctx = _extract_video_info(history)
+
     if results:
         context_text = ""
         for i, r in enumerate(results):
@@ -81,10 +98,17 @@ def _build_rag_prompt(question: str, results: list[dict], memory_ctx: str) -> st
             doc = r.get("doc_id", "")
             page = r.get("page", 1)
             context_text += f"[来源{i+1}]({doc} 第{page}页): {text}\n\n"
+        if video_ctx:
+            context_text = f"[对话中的视频信息]\n{video_ctx}\n\n参考资料:\n{context_text}"
         if memory_ctx:
-            context_text = f"[记忆上下文]\n{memory_ctx}\n\n参考资料:\n{context_text}"
+            context_text = f"[记忆上下文]\n{memory_ctx}\n\n{context_text}"
         return f"基于参考资料回答，标注来源编号：\n\n{context_text}\n\n用户问题：{question}"
     else:
+        if video_ctx:
+            prompt = f"[对话中的视频信息]\n{video_ctx}\n\n用户问题：{question}"
+            if memory_ctx:
+                prompt = f"[记忆上下文]\n{memory_ctx}\n\n{prompt}"
+            return prompt
         prompt = f"用户问题：{question}\n\n注意：知识库中未找到相关资料，请告知用户。"
         if memory_ctx:
             prompt = f"[记忆上下文]\n{memory_ctx}\n\n{prompt}"
@@ -117,7 +141,11 @@ def chat(question: str, image_base64: str = None, history: list[dict] = None,
     results = retriever.hybrid_search(question=search_query, image_base64=image_base64, top_k=RETRIEVAL_TOP_K)
     results = rerank(search_query, results, top_k=RERANK_TOP_K)
 
-    prompt = _build_rag_prompt(question, results, memory_ctx)
+    # 过滤低分来源（分数<0.1为噪声，对视频/图片问题用更高阈值）
+    min_score = 0.15 if _extract_video_info(history) else 0.1
+    results = [r for r in results if r.get("score", 0) >= min_score]
+
+    prompt = _build_rag_prompt(question, results, memory_ctx, history=history)
     answer = _call_llm(prompt, image_base64=image_base64)
 
     result = {"answer": f"[来自知识库] {answer}", "sources": results, "agent": AGENT_RAG}
@@ -146,11 +174,15 @@ def chat_stream(question: str, image_base64: str = None, history: list[dict] = N
     results = retriever.hybrid_search(question=search_query, image_base64=image_base64, top_k=RETRIEVAL_TOP_K)
     results = rerank(search_query, results, top_k=RERANK_TOP_K)
 
+    # 有视频上下文时，只保留相关来源
+    if _extract_video_info(history):
+        results = [r for r in results if r.get("score", 0) > 0.5]
+
     yield {"event": "agent", "data": AGENT_RAG}
     yield {"event": "sources", "data": results}
     yield {"event": "token", "data": "[来自知识库] "}
 
-    prompt = _build_rag_prompt(question, results, memory_ctx)
+    prompt = _build_rag_prompt(question, results, memory_ctx, history=history)
     for token in _call_llm_stream(prompt, image_base64=image_base64):
         yield {"event": "token", "data": token}
     yield {"event": "done", "data": ""}

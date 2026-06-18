@@ -1,72 +1,68 @@
-import dashscope
-from dashscope import Generation, MultiModalConversation
+import httpx
+import json as _json
 from backend.config import settings
 
-dashscope.api_key = settings.DASHSCOPE_API_KEY
-
-
-def _build_vl_content(image_base64: str) -> tuple[str, list[dict]]:
-    """构建 VL 多模态消息格式，返回 (model, content)"""
-    if image_base64.startswith("http://") or image_base64.startswith("https://") or image_base64.startswith("file://"):
-        image_url = image_base64
-    else:
-        image_url = f"data:image/png;base64,{image_base64}"
-    content = [
-        {"image": image_url},
-        {"text": ""},
-    ]
-    return settings.DASHSCOPE_VL_MODEL, content
-
-
-def _extract_vl_text(response) -> str:
-    """从 MultiModalConversation 响应中提取文本"""
-    content = response.output.choices[0].message.content
-    if isinstance(content, list):
-        return "".join(p.get("text", "") for p in content if "text" in p)
-    return content
+DASHSCOPE_BASE = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+API_KEY = settings.DASHSCOPE_API_KEY
 
 
 def _call_llm(prompt: str, image_base64: str = None) -> str:
-    """调用通义千问（同步），有图片时自动切换 VL 模型"""
+    """调用通义千问（OpenAI 兼容模式），有图片时自动切换 VL 模型"""
+    headers = {
+        "Authorization": f"Bearer {API_KEY}",
+        "Content-Type": "application/json",
+    }
+
     if image_base64:
-        model, content = _build_vl_content(image_base64)
-        content[-1]["text"] = prompt
-        response = MultiModalConversation.call(
-            model=model,
-            messages=[{"role": "user", "content": content}],
-        )
-        if response.status_code == 200:
-            return _extract_vl_text(response)
-        else:
-            raise Exception(f"通义千问 VL 调用失败 (code={response.status_code}): {response.message}")
+        model = settings.DASHSCOPE_VL_MODEL
+        messages = [{"role": "user", "content": [
+            {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{image_base64}"}},
+            {"type": "text", "text": prompt},
+        ]}]
     else:
-        response = Generation.call(
-            model=settings.DASHSCOPE_MODEL,
-            messages=[{"role": "user", "content": prompt}],
-            result_format="message",
-        )
-        if response.status_code == 200:
-            return response.output.choices[0].message.content
-        else:
-            raise Exception(f"通义千问调用失败 (code={response.status_code}): {response.message}")
+        model = settings.DASHSCOPE_MODEL
+        messages = [{"role": "user", "content": prompt}]
+
+    body = {"model": model, "messages": messages}
+    resp = httpx.post(f"{DASHSCOPE_BASE}/chat/completions", headers=headers, json=body, timeout=60)
+    if resp.status_code == 200:
+        return resp.json()["choices"][0]["message"]["content"]
+    else:
+        raise Exception(f"通义千问调用失败 (code={resp.status_code}): {resp.text}")
 
 
 def _call_llm_stream(prompt: str, image_base64: str = None):
-    """流式调用通义千问，有图片时返回 VL 完整结果，无图片时逐 token 流式"""
+    """流式调用通义千问"""
+    headers = {
+        "Authorization": f"Bearer {API_KEY}",
+        "Content-Type": "application/json",
+    }
+
     if image_base64:
-        # VL 模型流式支持有限，先取完整结果再 yield
-        answer = _call_llm(prompt, image_base64=image_base64)
-        yield answer
+        model = settings.DASHSCOPE_VL_MODEL
+        messages = [{"role": "user", "content": [
+            {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{image_base64}"}},
+            {"type": "text", "text": prompt},
+        ]}]
     else:
-        response = Generation.call(
-            model=settings.DASHSCOPE_MODEL,
-            messages=[{"role": "user", "content": prompt}],
-            result_format="message",
-            stream=True,
-            incremental_output=True,
-        )
-        for event in response:
-            if event.status_code == 200 and event.output:
-                token = event.output.choices[0].message.content
-                if token:
-                    yield token
+        model = settings.DASHSCOPE_MODEL
+        messages = [{"role": "user", "content": prompt}]
+
+    body = {"model": model, "messages": messages, "stream": True}
+    with httpx.stream("POST", f"{DASHSCOPE_BASE}/chat/completions", headers=headers, json=body, timeout=120) as resp:
+        if resp.status_code != 200:
+            yield f"调用失败 (code={resp.status_code})"
+            return
+        for line in resp.iter_lines():
+            if line.startswith("data:"):
+                data_str = line[len("data:"):].strip()
+                if data_str == "[DONE]":
+                    break
+                try:
+                    data = _json.loads(data_str)
+                    delta = data.get("choices", [{}])[0].get("delta", {})
+                    token = delta.get("content", "")
+                    if token:
+                        yield token
+                except Exception:
+                    continue

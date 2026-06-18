@@ -24,14 +24,28 @@ GENERAL_PATTERNS = [
     "介绍一下你自己", "你是谁", "聊天", "天气", "时间",
 ]
 
+# 视频/图片/文档内容相关问题 — 强制走 RAG，不经过 LLM 路由
+MEDIA_KEYWORDS = [
+    "视频", "画面", "影片", "镜头", "播放",
+    "上传", "文件", "文档", "图片", "这个图",
+    "里面有什么", "内容是什么", "描述", "讲了什么",
+    "看到了什么", "是什么样", "什么样的",
+]
+
 
 def classify(question: str) -> str:
     """
     返回:
       "rag"     — 需要知识库检索
       "general" — 通用问答，不需要知识库
+      "rag_fast" — 强制走 RAG，跳过 LLM 路由
     """
     q = question.strip()
+
+    # 多媒体内容问题 → 强制走 RAG
+    for kw in MEDIA_KEYWORDS:
+        if kw in q:
+            return "rag_fast"
 
     # 先检查是否包含专业知识关键词 → 走 RAG
     for kw in KNOWLEDGE_KEYWORDS:

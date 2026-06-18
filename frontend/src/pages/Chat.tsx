@@ -4,6 +4,7 @@ import {
   Input,
   Button,
   Card,
+  Popover,
   Typography,
   Space,
   Tag,
@@ -11,11 +12,13 @@ import {
   message,
   Popconfirm,
   Spin,
+  Select,
 } from "antd";
 import {
   SendOutlined,
   UploadOutlined,
   PictureOutlined,
+  VideoCameraOutlined,
   DeleteOutlined,
   RobotOutlined,
   UserOutlined,
@@ -38,6 +41,11 @@ import {
   createConversation,
   getConversation,
   deleteConversation,
+  uploadVideo,
+  getVideoStatus,
+  generateVideo as apiGenerateVideo,
+  getGenerationStatus,
+  appendMessage,
   type QueryResponse,
   type ConversationInfo,
   type MessageInfo,
@@ -63,14 +71,32 @@ export default function ChatPage() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [imageFile, setImageFile] = useState<UploadFile | null>(null);
+  const [videoFile, setVideoFile] = useState<UploadFile | null>(null);
+  const [genPopOpen, setGenPopOpen] = useState(false);
+  const [genPrompt, setGenPrompt] = useState("");
+  const [genModel, setGenModel] = useState("wanx2.1-t2v-turbo");
+  const [genRatio, setGenRatio] = useState("16:9");
+  const [genDuration, setGenDuration] = useState(5);
+  const [generatingVideo, setGeneratingVideo] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   // Conversation state
   const [conversations, setConversations] = useState<ConversationInfo[]>([]);
-  const [activeConvId, setActiveConvId] = useState<string | null>(null);
+  const [activeConvId, setActiveConvId] = useState<string | null>(() => {
+    return localStorage.getItem("chat_active_conv") || null;
+  });
   const [convsLoading, setConvsLoading] = useState(false);
   const [expandedSources, setExpandedSources] = useState<Set<number>>(new Set());
   const [streamingContent, setStreamingContent] = useState("");
+
+  // 持久化 activeConvId 到 localStorage，切换 tab 时恢复
+  useEffect(() => {
+    if (activeConvId) {
+      localStorage.setItem("chat_active_conv", activeConvId);
+    } else {
+      localStorage.removeItem("chat_active_conv");
+    }
+  }, [activeConvId]);
 
   const fetchConversations = useCallback(async (): Promise<ConversationInfo[]> => {
     setConvsLoading(true);
@@ -83,12 +109,27 @@ export default function ChatPage() {
   }, []);
 
   useEffect(() => {
+    // 恢复之前生成的视频
+    const savedVideos = JSON.parse(localStorage.getItem("gen_videos") || "[]");
+    if (savedVideos.length > 0) {
+      const videoMsgs: Message[] = savedVideos.map((v: any, i: number) => ({
+        id: Date.now() - savedVideos.length + i,
+        type: "assistant" as const,
+        content: `已根据你的描述生成视频：\n\n[点击播放视频](/api/videos/proxy?url=${encodeURIComponent(v.url)})\n\n> 提示：*${v.prompt}*`,
+      }));
+      setMessages(videoMsgs);
+    }
+
     fetchConversations().then(async (list) => {
-      // Auto-select the most recent conversation when returning to the page
       if (list && list.length > 0) {
-        setActiveConvId(list[0].id);
+        // 优先恢复上次选中的会话，其次选最新
+        const savedConvId = localStorage.getItem("chat_active_conv");
+        const targetId = savedConvId && list.some(c => c.id === savedConvId)
+          ? savedConvId
+          : list[0].id;
+        setActiveConvId(targetId);
         try {
-          const detail = await getConversation(list[0].id);
+          const detail = await getConversation(targetId);
           const msgs: Message[] = detail.messages.map((m: MessageInfo, idx: number) => ({
             id: idx,
             type: m.role as "user" | "assistant",
@@ -229,6 +270,187 @@ export default function ChatPage() {
       message.error(e?.message ?? "查询失败");
       setLoading(false);
       setImageFile(null);
+    }
+  };
+
+  const handleVideoUpload = async (file: any) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      setVideoFile({
+        uid: "-1", name: file.name,
+        url: e.target?.result as string,
+        thumbUrl: e.target?.result as string,
+        originFileObj: file,
+      });
+    };
+    reader.readAsDataURL(file);
+
+    // 自动创建对话（如果没有激活的）
+    let convId = activeConvId;
+    if (!convId) {
+      try {
+        const conv = await createConversation();
+        setConversations((prev) => [conv, ...prev]);
+        convId = conv.id;
+        setActiveConvId(convId);
+      } catch { /* 无对话也能上传 */ }
+    }
+
+    // 自动在聊天中添加消息
+    const userContent = `我上传了一个视频：${file.name}`;
+    const userMsg: Message = { id: Date.now(), type: "user", content: userContent };
+    const statusMsgId = Date.now() + 1;
+    const statusMsg: Message = { id: statusMsgId, type: "assistant", content: `📤 视频 "${file.name}" 已上传，正在后台处理中...` };
+    setMessages((prev) => [...prev, userMsg, statusMsg]);
+
+    // 保存用户消息到后端
+    let userBackendId: string | null = null;
+    if (convId) {
+      try {
+        const saved = await appendMessage(convId, { role: "user", content: userContent });
+        userBackendId = saved.id;
+      } catch { /* 非关键 */ }
+    }
+
+    try {
+      const res = await uploadVideo(file);
+      const docId = res.doc_id;
+      // 轮询处理状态
+      const poll = setInterval(async () => {
+        try {
+          const s = await getVideoStatus(docId);
+          if (s.status === "done") {
+            clearInterval(poll);
+            const desc = s.description ? `\n\n> 内容概要：${s.description.slice(0, 200)}` : "";
+            const doneContent = `✅ 视频 "${file.name}" 已处理完成！${desc}\n\n你可以问我关于这个视频的任何问题。`;
+            setMessages((msgs) => msgs.map((m) =>
+              m.id === statusMsgId ? { ...m, content: doneContent } : m
+            ));
+            // 保存完成消息到后端
+            if (convId) {
+              try {
+                await appendMessage(convId, {
+                  role: "assistant", content: doneContent,
+                  sources: [{ type: "video", doc_id: docId, filename: file.name, description: s.description }],
+                });
+              } catch { /* 非关键 */ }
+            }
+            message.success(`视频 ${file.name} 处理完成`);
+          } else if (s.status === "failed") {
+            clearInterval(poll);
+            const failContent = `❌ 视频 "${file.name}" 处理失败：${s.error_message || "未知错误"}`;
+            setMessages((msgs) => msgs.map((m) =>
+              m.id === statusMsgId ? { ...m, content: failContent } : m
+            ));
+          } else if (s.status === "processing") {
+            setMessages((msgs) => msgs.map((m) =>
+              m.id === statusMsgId
+                ? { ...m, content: `🔍 正在理解视频内容... (${file.name})` }
+                : m
+            ));
+          }
+        } catch (err: any) {
+          // 404 = 视频已被删除，停止轮询
+          if (err?.response?.status === 404) {
+            clearInterval(poll);
+            setMessages((msgs) => msgs.filter((m) => m.id !== statusMsgId));
+          }
+          /* 其他网络错误继续轮询 */
+        }
+      }, 3000);
+    } catch (e: any) {
+      setMessages((msgs) => msgs.map((m) =>
+        m.id === statusMsgId ? { ...m, content: `❌ 视频上传失败：${e?.response?.data?.detail || "未知错误"}` } : m
+      ));
+    }
+    return false;
+  };
+
+  const handleVideoGenerate = async () => {
+    if (!genPrompt.trim()) {
+      message.warning("请输入视频描述");
+      return;
+    }
+    setGeneratingVideo(true);
+    setGenPopOpen(false);
+    const genPromptText = genPrompt;
+    setGenPrompt("");
+
+    // 先添加一条"生成中"的助手消息，显示进度
+    const progressMsgId = Date.now();
+    const progressMsg: Message = {
+      id: progressMsgId,
+      type: "assistant",
+      content: `正在根据描述生成视频：*${genPromptText}*\n\n状态：⏳ 创建任务中...`,
+    };
+    setMessages((prev) => [...prev, progressMsg]);
+
+    try {
+      const res = await apiGenerateVideo({
+        prompt: genPromptText, model: genModel,
+        ratio: genRatio, duration: genDuration,
+      });
+
+      // 更新进度消息
+      const updateProgress = (status: string) => {
+        setMessages((msgs) => msgs.map((m) =>
+          m.id === progressMsgId
+            ? { ...m, content: `正在根据描述生成视频：*${genPromptText}*\n\n状态：${status}` }
+            : m
+        ));
+      };
+
+      updateProgress(`⏳ 任务排队中... (${res.task_id.slice(0, 8)})`);
+
+      // 轮询等待完成，及时更新进度
+      const poll = setInterval(async () => {
+        try {
+          const status = await getGenerationStatus(res.task_id, genModel);
+          if (status.status === "SUCCEEDED" && status.video_url) {
+            clearInterval(poll);
+            setGeneratingVideo(false);
+            // 替换进度消息为完成的视频
+            const proxyUrl = `/api/videos/proxy?url=${encodeURIComponent(status.video_url)}`;
+            const videoContent = `已根据你的描述生成视频：\n\n[点击播放视频](${proxyUrl})\n\n> 提示：*${genPromptText}*`;
+            setMessages((msgs) => msgs.map((m) =>
+              m.id === progressMsgId
+                ? { ...m, content: videoContent }
+                : m
+            ));
+            // 持久化到 localStorage
+            const saved = JSON.parse(localStorage.getItem("gen_videos") || "[]");
+            saved.push({ prompt: genPromptText, url: status.video_url, taskId: res.task_id, time: Date.now() });
+            localStorage.setItem("gen_videos", JSON.stringify(saved.slice(-20)));
+            // 保存到后端对话
+            if (activeConvId) {
+              try {
+                await appendMessage(activeConvId, {
+                  role: "assistant",
+                  content: videoContent,
+                  sources: [{ type: "video", url: status.video_url, prompt: genPromptText }],
+                });
+              } catch { /* 非关键 */ }
+            }
+            message.success("视频生成完成！");
+          } else if (status.status === "FAILED") {
+            clearInterval(poll);
+            setGeneratingVideo(false);
+            updateProgress(`❌ 生成失败：${status.error_message || "未知错误"}`);
+            message.error(status.error_message || "视频生成失败");
+          } else if (status.status === "RUNNING") {
+            updateProgress(`🎬 AI 正在生成视频中... 通常需要 1-3 分钟`);
+          }
+        } catch { /* 继续轮询 */ }
+      }, 5000);
+    } catch (e: any) {
+      setGeneratingVideo(false);
+      const errMsg = e?.response?.data?.detail || "生成失败";
+      setMessages((msgs) => msgs.map((m) =>
+        m.id === progressMsgId
+          ? { ...m, content: `视频生成失败：${errMsg}\n\n> 提示：*${genPromptText}*` }
+          : m
+      ));
+      message.error(errMsg);
     }
   };
 
@@ -373,7 +595,7 @@ export default function ChatPage() {
                   {[
                     { icon: <FileTextOutlined />, text: "总结文档主要内容" },
                     { icon: <SearchOutlined />, text: "帮我找出关键数据" },
-                    { icon: <ThunderboltOutlined />, text: "文档的核心观点是什么" },
+                    { icon: <VideoCameraOutlined />, text: "上传视频并分析内容" },
                   ].map((s, i) => (
                     <div
                       key={i}
@@ -454,6 +676,26 @@ export default function ChatPage() {
                                   {children}
                                 </li>
                               ),
+                              img: ({ src, alt }) => {
+                                if (src && /\.(mp4|mov|webm)(\?|$)/i.test(src)) {
+                                  return (
+                                    <video src={src} controls style={{ maxWidth: "100%", maxHeight: 320, borderRadius: 10, margin: "8px 0" }}>
+                                      你的浏览器不支持视频播放
+                                    </video>
+                                  );
+                                }
+                                return <img src={src} alt={alt} style={{ maxWidth: 200, maxHeight: 150, borderRadius: 10 }} />;
+                              },
+                              a: ({ href, children }) => {
+                                if (href && /\.(mp4|mov|webm)(\?|$)/i.test(href)) {
+                                  return (
+                                    <video src={href} controls style={{ maxWidth: "100%", maxHeight: 320, borderRadius: 10, margin: "8px 0" }}>
+                                      你的浏览器不支持视频播放
+                                    </video>
+                                  );
+                                }
+                                return <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>;
+                              },
                             }}
                           >
                             {msg.content}
@@ -563,26 +805,34 @@ export default function ChatPage() {
           background: "linear-gradient(180deg, transparent, var(--bg-base) 30%)",
         }}>
           <div style={{ maxWidth: 860, margin: "0 auto" }}>
-            {imageFile && (
-              <div style={{
-                marginBottom: 10,
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 8,
-                background: "var(--primary-light)",
-                border: "1px solid var(--primary-soft)",
-                borderRadius: 20,
-                padding: "5px 14px 5px 10px",
-              }}>
-                <PictureOutlined style={{ color: "var(--primary)", fontSize: 13 }} />
-                <Text style={{ fontSize: 12, color: "var(--text)" }}>{imageFile.name}</Text>
-                <Button
-                  type="text"
-                  size="small"
-                  icon={<DeleteOutlined />}
-                  onClick={() => setImageFile(null)}
-                  style={{ color: "var(--text-muted)", minWidth: 20 }}
-                />
+            {(imageFile || videoFile) && (
+              <div style={{ marginBottom: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                {imageFile && (
+                  <div style={{
+                    display: "inline-flex", alignItems: "center", gap: 8,
+                    background: "var(--primary-light)", border: "1px solid var(--primary-soft)",
+                    borderRadius: 20, padding: "5px 14px 5px 10px",
+                  }}>
+                    <PictureOutlined style={{ color: "var(--primary)", fontSize: 13 }} />
+                    <Text style={{ fontSize: 12, color: "var(--text)" }}>{imageFile.name}</Text>
+                    <Button type="text" size="small" icon={<DeleteOutlined />}
+                      onClick={() => setImageFile(null)}
+                      style={{ color: "var(--text-muted)", minWidth: 20 }} />
+                  </div>
+                )}
+                {videoFile && (
+                  <div style={{
+                    display: "inline-flex", alignItems: "center", gap: 8,
+                    background: "#fef3c7", border: "1px solid #fcd34d",
+                    borderRadius: 20, padding: "5px 14px 5px 10px",
+                  }}>
+                    <VideoCameraOutlined style={{ color: "#d97706", fontSize: 13 }} />
+                    <Text style={{ fontSize: 12, color: "var(--text)" }}>{videoFile.name}</Text>
+                    <Button type="text" size="small" icon={<DeleteOutlined />}
+                      onClick={() => setVideoFile(null)}
+                      style={{ color: "var(--text-muted)", minWidth: 20 }} />
+                  </div>
+                )}
               </div>
             )}
 
@@ -619,6 +869,48 @@ export default function ChatPage() {
                   }}
                 />
               </Upload>
+
+              {/* 视频上传按钮 */}
+              <Upload
+                accept="video/*"
+                maxCount={1}
+                showUploadList={false}
+                beforeUpload={(file) => { handleVideoUpload(file); return false; }}
+              >
+                <Button type="text" icon={<VideoCameraOutlined />}
+                  style={{ color: videoFile ? "#d97706" : "var(--text-muted)", fontSize: 18, width: 40, height: 40 }} />
+              </Upload>
+
+              {/* 视频生成按钮 */}
+              <Popover
+                open={genPopOpen}
+                onOpenChange={setGenPopOpen}
+                trigger="click"
+                placement="topRight"
+                title="AI 视频生成"
+                content={
+                  <div style={{ width: 320 }}>
+                    <Input.TextArea
+                      rows={3} value={genPrompt} onChange={e => setGenPrompt(e.target.value)}
+                      placeholder="描述你想生成的视频..."
+                      style={{ marginBottom: 10 }}
+                    />
+                    <Space wrap style={{ marginBottom: 10 }}>
+                      <Select value={genRatio} onChange={setGenRatio} style={{ width: 80 }} size="small"
+                        options={[{value:"16:9",label:"16:9"},{value:"9:16",label:"9:16"},{value:"1:1",label:"1:1"}]} />
+                      <Select value={genDuration} onChange={setGenDuration} style={{ width: 70 }} size="small"
+                        options={[5,10,15].map(d=>({value:d,label:`${d}秒`}))} />
+                    </Space>
+                    <Button type="primary" block icon={<ThunderboltOutlined />}
+                      onClick={handleVideoGenerate} loading={generatingVideo}>
+                      生成视频
+                    </Button>
+                  </div>
+                }
+              >
+                <Button type="text" icon={<ThunderboltOutlined />}
+                  style={{ color: generatingVideo ? "var(--primary)" : "var(--text-muted)", fontSize: 18, width: 40, height: 40 }} />
+              </Popover>
 
               <TextArea
                 value={input}

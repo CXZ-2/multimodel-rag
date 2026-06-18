@@ -55,7 +55,7 @@ async def upload_documents(files: list[UploadFile] = File(...), db: AsyncSession
             pdf_doc.close()
         else:
             full_text = ""
-        process_document.delay(str(doc.id), pdf_path, full_text)
+        process_document.delay(str(doc.id), pdf_path)
 
         results.append(doc)
 

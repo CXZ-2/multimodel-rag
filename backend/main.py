@@ -2,7 +2,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from backend.api import upload, query, collection, documents, conversations, crawl, health, image_search
+from backend.api import upload, query, collection, documents, conversations, crawl, health, image_search, videos
 from backend.core import vectorstore
 from backend.core.logging import RequestLoggingMiddleware, logger
 from backend.models.database import init_db
@@ -29,6 +29,7 @@ app.include_router(conversations.router, prefix="/api", tags=["conversations"])
 app.include_router(crawl.router, prefix="/api", tags=["crawl"])
 app.include_router(health.router, prefix="/api", tags=["health"])
 app.include_router(image_search.router, prefix="/api", tags=["image-search"])
+app.include_router(videos.router, prefix="/api", tags=["videos"])
 
 
 @app.exception_handler(Exception)

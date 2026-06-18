@@ -47,3 +47,8 @@ markdown==3.7
 sentence-transformers>=3.0
 rank-bm25>=0.2.2
 
+# 视频处理
+av>=12.0.0
+faster-whisper>=1.0.0
+openai>=1.30.0
+

@@ -86,13 +86,17 @@ def _add_text_to_bm25(doc_id: str, text: str):
 
 
 @app.task(bind=True, max_retries=3, default_retry_delay=60)
-def process_document(self, doc_id: str, pdf_path: str, doc_text: str):
+def process_document(self, doc_id: str, pdf_path: str):
     import asyncio
 
     async def _process():
-        # 1. 清理
+        ext = os.path.splitext(pdf_path)[1].lower()
+
+        # 1. 解析文档（使用 PDF 全文做清洗检测）
         await _update_doc_status(str(doc_id), status="cleaning")
-        cleaned_text, report, is_dup = clean_document(doc_text)
+        pages = pdf_parser.parse_document(pdf_path, ext)
+        raw_text = "\n".join(p["text"] for p in pages)
+        cleaned_text, report, is_dup = clean_document(raw_text)
 
         if is_dup:
             await _update_doc_status(str(doc_id), status="failed",
@@ -106,11 +110,9 @@ def process_document(self, doc_id: str, pdf_path: str, doc_text: str):
             "duplicates_found": report.duplicates_found,
         }
 
-        # 2. 解析 — 根据文件扩展名路由
+        # 2. 分块（使用简单分块，避免双重嵌入）
         await _update_doc_status(str(doc_id), status="embedding")
-        ext = os.path.splitext(pdf_path)[1].lower()
-        pages = pdf_parser.parse_document(pdf_path, ext)
-        chunks = pdf_parser.split_text(pages)
+        chunks = pdf_parser.split_text_simple(pages)
 
         # 图片文件: 上传的文件本身就是图片，直接嵌入
         img_exts = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
@@ -123,23 +125,25 @@ def process_document(self, doc_id: str, pdf_path: str, doc_text: str):
                 pdf_path,
                 os.path.join(os.path.dirname(pdf_path), "images")
             )
-            for img in images:
-                img["ocr_text"] = ocr_engine.ocr_image(img["path"])
+            texts = [img.get("ocr_text", "") for img in images]
+            ocr_results = ocr_engine.ocr_images_batch([img["path"] for img in images])
+            for img, ocr_text in zip(images, ocr_results):
+                img["ocr_text"] = ocr_text if ocr_text else ""
 
-        # 3. 嵌入
+        # 3. 批处理嵌入
         await _update_doc_status(str(doc_id), status="indexing")
         if chunks:
-            text_embeddings = [embedder.embed_text(c["text"]) for c in chunks]
+            text_embeddings = embedder.embed_texts_batch([c["text"] for c in chunks])
             vectorstore.insert_texts(str(doc_id), chunks, text_embeddings)
 
         if images:
-            image_embeddings = [embedder.embed_image(img["path"]) for img in images]
+            image_embeddings = embedder.embed_images_batch([img["path"] for img in images])
             vectorstore.insert_images(str(doc_id), images, image_embeddings)
 
         ocr_chunks = [{"text": img["ocr_text"], "page": img["page"], "chunk_index": -1}
                       for img in images if img.get("ocr_text", "").strip()]
         if ocr_chunks:
-            ocr_embeddings = [embedder.embed_text(c["text"]) for c in ocr_chunks]
+            ocr_embeddings = embedder.embed_texts_batch([c["text"] for c in ocr_chunks])
             vectorstore.insert_texts(str(doc_id), ocr_chunks, ocr_embeddings)
 
         # 4. 完成
@@ -176,11 +180,11 @@ def process_crawled_document(self, doc_id: str, title: str, body_text: str, sour
         await _update_doc_status(str(doc_id), status="embedding")
 
         pages = [{"page": 1, "text": cleaned_text}]
-        chunks = pdf_parser.split_text(pages)
+        chunks = pdf_parser.split_text_simple(pages)
 
         await _update_doc_status(str(doc_id), status="indexing")
         if chunks:
-            embeddings = [embedder.embed_text(c["text"]) for c in chunks]
+            embeddings = embedder.embed_texts_batch([c["text"] for c in chunks])
             vectorstore.insert_texts(str(doc_id), chunks, embeddings)
 
         report_dict = {
@@ -204,6 +208,89 @@ def process_crawled_document(self, doc_id: str, title: str, body_text: str, sour
         _add_text_to_bm25(str(doc_id), body_text)
     except Exception:
         pass
+
+
+@app.task(bind=True, max_retries=3, default_retry_delay=60)
+def process_video(self, doc_id: str, video_path: str):
+    """异步处理视频：音频转录 + DashScope 理解 + 关键帧嵌入"""
+    import asyncio
+    from backend.core.video_parser import extract_key_frames, get_video_metadata, extract_audio
+    from backend.core.video_understander import understand_video, transcribe_audio
+    from backend.core.embedder import embed_images_batch, embed_texts_batch
+    from backend.core.pdf_parser import split_text_simple
+
+    async def _update(status, **kwargs):
+        return await _update_doc_status(doc_id, status=status, **kwargs)
+
+    async def _process():
+        await _update("processing")
+
+        # 1. 获取元数据
+        metadata = get_video_metadata(video_path)
+        dur = metadata["duration"]
+
+        # 2. 提取音频并转录
+        transcript = ""
+        if metadata["has_audio"]:
+            try:
+                audio_path = extract_audio(video_path)
+                transcript = transcribe_audio(audio_path)
+            except Exception as e:
+                transcript = f"[音频转录失败: {e}]"
+
+        # 3. 调用 DashScope 理解视频
+        try:
+            understanding = understand_video(video_path)
+        except Exception as e:
+            understanding = {"summary": f"视频理解失败: {e}", "raw": True}
+
+        # 4. 提取关键帧并嵌入到 Milvus
+        frame_count = 0
+        try:
+            frame_paths = extract_key_frames(video_path)
+            if frame_paths:
+                embeddings = embed_images_batch(frame_paths)
+                image_data = [
+                    {"path": fp, "page": i, "ocr_text": ""}
+                    for i, fp in enumerate(frame_paths)
+                ]
+                vectorstore.insert_images(doc_id, image_data, embeddings)
+                frame_count = len(frame_paths)
+        except Exception:
+            frame_paths = []
+
+        # 5. 构建视频理解报告
+        report = {
+            **understanding,
+            "transcript": transcript,
+            "metadata": metadata,
+            "key_frames": frame_count,
+        }
+
+        # 6. 将 transcript + summary 作为文本块嵌入
+        text_content = f"{understanding.get('summary', '')}\n\n{transcript}"
+        chunk_count = 0
+        if text_content.strip():
+            pages = [{"page": 1, "text": text_content}]
+            chunks = split_text_simple(pages)
+            if chunks:
+                text_embs = embed_texts_batch([c["text"] for c in chunks])
+                text_data = [
+                    {"text": c["text"], "page": c["page"], "chunk_index": c.get("chunk_index", -1)}
+                    for c in chunks
+                ]
+                vectorstore.insert_texts(doc_id, text_data, text_embs)
+                chunk_count = len(chunks)
+
+        await _update(
+            "done",
+            duration=dur,
+            text_chunks=chunk_count,
+            image_count=frame_count,
+            cleaning_report=report,
+        )
+
+    asyncio.run(_process())
 
 
 @app.task(bind=True, max_retries=3, default_retry_delay=30)
