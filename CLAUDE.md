@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目概述
 
-多模态 RAG（检索增强生成）平台 — PDF/多格式文档上传后图文混合检索问答 + 网页爬取知识库。前端 React + Ant Design + TypeScript + Vite，后端 FastAPI + Celery + Milvus + PostgreSQL。
+多模态 RAG（检索增强生成）平台 — PDF/多格式文档上传后图文混合检索问答 + 视频理解与生成 + 网页爬取知识库。前端 React + Ant Design + TypeScript + Vite，后端 FastAPI + Celery + Milvus + PostgreSQL。
 
 ## 启动方式
 
@@ -24,7 +24,7 @@ docker compose up -d --build
 | postgres | 5432 | 文档/对话数据 (pgvector) |
 | milvus-standalone | 19530 | 向量检索 (text_collection + image_collection) |
 | redis | 6379 | Celery 消息队列 |
-| celery-worker | — | 异步文档处理 (解析→清洗→嵌入→索引) |
+| celery-worker | — | 异步文档/视频处理 (解析→清洗→嵌入→索引) |
 | celery-beat | — | 定时爬取调度 |
 | minio | 9000 | Milvus 对象存储 |
 | etcd | 2379 | Milvus 元数据 |
@@ -44,7 +44,11 @@ backend/
     image_search.py    # POST /api/image-search — 以图搜图 (计划中)
     collection.py      # Milvus 集合管理
     health.py          # GET /api/health — 检查 postgres/milvus/redis
+    videos.py          # 视频API: upload/status/list/delete/generate/proxy
   core/
+    video_parser.py    # PyAV 关键帧提取 + FFmpeg 音频提取
+    video_understander.py # DashScope Qwen-VL 视频理解 + faster-whisper 语音识别
+    video_generator.py # T2V 多通道生成 (DashScope 万相 / OpenAI Sora)
     agents.py          # 多Agent: Router(LLM) → General Agent / RAG Agent (零额外依赖)
     classifier.py      # 关键词意图分类器 (rag vs general)
     retriever.py       # hybrid_search: 文本+图片混合检索 + RRF融合
@@ -89,6 +93,8 @@ backend/
 - **Milvus 连接别名**: 健康检查等辅助连接必须使用独立 alias (如 `health_check`)，绝不能 disconnect `"default"` 连接（会断开应用的主连接）
 - **SQLAlchemy async**: 使用 NullPool 避免连接池溢出；加载关系时必须用 `selectinload()` 预加载，否则 `MissingGreenlet` 错误（async lazy load 不可用）
 - **日志中间件**: 必须使用纯 ASGI 中间件，不能使用 `BaseHTTPMiddleware`（内部 `anyio.create_task_group()` 会导致 greenlet 上下文丢失）
+- **视频处理**: 视频上传后 Celery 异步处理（DashScope Qwen-VL 理解 + faster-whisper 语音 + CLIP 关键帧嵌入），结果存入 Milvus。T2V 生成通过 `/api/videos/proxy` 代理解决 CORS
+- **视频问答路由**: 分类器 `MEDIA_KEYWORDS` 检测视频相关问题强制走 RAG，`_extract_video_info()` 从对话历史提取视频信息注入 prompt，打分 <0.1 的来源自动过滤
 - **前端缓存**: nginx 配置了 HTML `no-cache` + JS/CSS `immutable`。修改前端后用户需 `Ctrl+Shift+R` 硬刷新
 - **Docker 重建**: 后端代码无 volume 挂载，每次修改后必须 `docker compose build backend && docker compose up -d backend`
 - **`.env` 在 .gitignore 中**，永远不能提交；`.env.example` 是模板
